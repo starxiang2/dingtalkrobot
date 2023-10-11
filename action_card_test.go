@@ -1,4 +1,4 @@
-package main
+package dingtalkrobot
 
 import (
 	"github.com/starxiang2/dingtalkrobot/msg"

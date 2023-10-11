@@ -1,7 +1,6 @@
-package main
+package dingtalkrobot
 
 import (
-	"fmt"
 	"github.com/starxiang2/dingtalkrobot/msg"
 	"log"
 	"testing"
@@ -14,7 +13,6 @@ func TestMarkdown(t *testing.T) {
 	msgData := msg.NewMarkdown()
 
 	msgData.SetMsg("Markdown title", text)
-	fmt.Println("ad")
 	err := ding.SendMsg(msgData)
 	if err != nil {
 		log.Fatal(err.Error())
