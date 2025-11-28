@@ -8,12 +8,13 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"github.com/starxiang2/dingtalkrobot/msg/repo"
 	"net/http"
 	"net/url"
 	"strconv"
 	"strings"
 	"time"
+
+	"github.com/starxiang2/dingtalkrobot/msg/repo"
 )
 
 type DingtalkRobot struct {
@@ -42,12 +43,13 @@ func (d *DingtalkRobot) SendMsg(msg repo.Msg) error {
 		return errors.New("json 转换失败")
 	}
 
-	post, err := http.Post(api.String(), "application/json", bytes.NewReader(msgString))
+	response, err := http.Post(api.String(), "application/json", bytes.NewReader(msgString))
 
 	if err != nil {
 		return err
 	}
 
+	defer response.Body.Close()
 	resp := dingtalkResponse{}
 	err = json.NewDecoder(post.Body).Decode(&resp)
 	if err != nil {
