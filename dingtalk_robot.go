@@ -51,7 +51,7 @@ func (d *DingtalkRobot) SendMsg(msg repo.Msg) error {
 
 	defer response.Body.Close()
 	resp := dingtalkResponse{}
-	err = json.NewDecoder(post.Body).Decode(&resp)
+	err = json.NewDecoder(response.Body).Decode(&resp)
 	if err != nil {
 		return err
 	}
