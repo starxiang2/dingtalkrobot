@@ -6,8 +6,8 @@ import (
 	"crypto/sha256"
 	"encoding/base64"
 	"encoding/json"
-	"errors"
 	"fmt"
+	"io"
 	"net/http"
 	"net/url"
 	"strconv"
@@ -17,10 +17,12 @@ import (
 	"github.com/starxiang2/dingtalkrobot/msg/repo"
 )
 
+const defaultSendTimeout = 30 * time.Second
+
 type DingtalkRobot struct {
-	api       string
-	secret    string
-	timestamp int64
+	api    string
+	secret string
+	client *http.Client
 }
 
 type dingtalkResponse struct {
@@ -29,48 +31,75 @@ type dingtalkResponse struct {
 }
 
 func (d *DingtalkRobot) SendMsg(msg repo.Msg) error {
-	api, _ := url.Parse(d.api)
+	apiURL, err := url.Parse(d.api)
+	if err != nil {
+		return fmt.Errorf("parse api url: %w", err)
+	}
 
-	q := api.Query()
-	q.Set("sign", d.sign())
-	q.Set("timestamp", strconv.FormatInt(d.timestamp, 10))
+	ts := time.Now().UnixMilli()
+	q := apiURL.Query()
+	q.Set("sign", computeSign(ts, d.secret))
+	q.Set("timestamp", strconv.FormatInt(ts, 10))
+	apiURL.RawQuery = q.Encode()
 
-	api.RawQuery = q.Encode()
 	msg.SetMsgType()
 	msgString, err := json.Marshal(msg)
-
 	if err != nil {
-		return errors.New("json 转换失败")
+		return fmt.Errorf("json marshal: %w", err)
 	}
 
-	response, err := http.Post(api.String(), "application/json", bytes.NewReader(msgString))
+	client := d.client
+	if client == nil {
+		client = http.DefaultClient
+	}
 
+	req, err := http.NewRequest(http.MethodPost, apiURL.String(), bytes.NewReader(msgString))
+	if err != nil {
+		return fmt.Errorf("build request: %w", err)
+	}
+	req.Header.Set("Content-Type", "application/json")
+
+	response, err := client.Do(req)
 	if err != nil {
 		return err
 	}
-
 	defer response.Body.Close()
-	resp := dingtalkResponse{}
-	err = json.NewDecoder(response.Body).Decode(&resp)
+
+	body, err := io.ReadAll(response.Body)
 	if err != nil {
-		return err
+		return fmt.Errorf("read response: %w", err)
+	}
+
+	resp := dingtalkResponse{}
+	if err := json.Unmarshal(body, &resp); err != nil {
+		return fmt.Errorf("decode response: %w", err)
 	}
 	if resp.Code != 0 {
-		return errors.New(resp.Msg)
+		return fmt.Errorf("dingtalk api: %s (code %d)", resp.Msg, resp.Code)
 	}
 	return nil
 }
 
-func (d *DingtalkRobot) sign() string {
-	d.timestamp = time.Now().UnixMilli()
-	signString := fmt.Sprintf("%d\n%s", d.timestamp, d.secret)
-
-	mac := hmac.New(sha256.New, []byte(d.secret))
+func computeSign(ts int64, secret string) string {
+	signString := fmt.Sprintf("%d\n%s", ts, secret)
+	mac := hmac.New(sha256.New, []byte(secret))
 	mac.Write([]byte(signString))
-
 	return base64.StdEncoding.EncodeToString(mac.Sum(nil))
 }
+
 func New(token, secret string) *DingtalkRobot {
-	api := fmt.Sprintf(`https://oapi.dingtalk.com/robot/send?access_token=%s`, strings.Trim(token, ""))
-	return &DingtalkRobot{secret: secret, api: api}
+	api := fmt.Sprintf(`https://oapi.dingtalk.com/robot/send?access_token=%s`, strings.TrimSpace(token))
+	return &DingtalkRobot{
+		secret: secret,
+		api:    api,
+		client: &http.Client{Timeout: defaultSendTimeout},
+	}
+}
+
+func NewWithHTTPClient(token, secret string, client *http.Client) *DingtalkRobot {
+	r := New(token, secret)
+	if client != nil {
+		r.client = client
+	}
+	return r
 }
